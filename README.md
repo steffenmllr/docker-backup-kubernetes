@@ -1,2 +1,2 @@
-# docker-backup-postgresql-to-local
-Uses the ruby backup to save encrypted backups to disk
+# docker-backup-kubernetes
+Uses the ruby backup in kubernetes as a cron job
