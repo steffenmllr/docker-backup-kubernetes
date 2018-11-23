@@ -7,6 +7,7 @@ RUN \
     libxslt-dev \
     postgresql \
     readline-dev \
+    gzip \
     tar \
     zlib-dev && \
   rm -rf /var/cache/apk/*
