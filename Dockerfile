@@ -11,4 +11,4 @@ RUN \
     zlib-dev && \
   rm -rf /var/cache/apk/*
 
-RUN gem install backup --no-ri --no-rdoc
+RUN gem install backup -v 4.4.1 --no-ri --no-rdoc
