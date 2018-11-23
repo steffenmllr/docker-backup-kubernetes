@@ -1,0 +1,80 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backup-config
+data:
+  config.rb: |
+  Model.new(:backup, 'docker-backup-postgresql-to-local') do
+
+    ##
+    # PostgreSQL [Database]
+    #
+    database PostgreSQL do |db|
+      db.name               = :all
+      db.username           = ENV['DATABASE_USERNAME'].dup
+      db.password           = ENV['DATABASE_PASSWORD'].dup
+      db.host               = ENV['DATABASE_HOST'].dup
+      db.port               = ENV['DATABASE_PORT'].dup
+    end
+
+    ##
+    # Local Store
+    #
+    store_with Local do |local|
+      local.path = '/backups/'
+      # Use a number or a Time object to specify how many backups to keep.
+      local.keep = ENV['KEEP_BACKUPS'].dup
+    end
+
+---
+
+apiVersion: batch/v1beta1
+kind: CronJob
+metadata:
+  name: database-backup
+spec:
+  schedule: "* */6 * * *" # every 6 hours
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 4
+      template:
+        spec:
+        volumes:
+          - name: backup-data
+            persistentVolumeClaim:
+              claimName: your-pv-claim
+          - name: backup-config
+            configMap:
+              name: backup-config
+          terminationGracePeriodSeconds: 0
+          restartPolicy: Never
+          containers:
+          - name: kubectl
+            image: steffenmllr/docker-backup-kubernetes:latest
+            env:
+            - name: DATABASE_USERNAME
+              value: "your-db"
+
+            - name: DATABASE_PASSWORD
+              value: "your-password"
+
+            - name: DATABASE_HOST
+              value: "your-host"
+
+            - name: KEEP_BACKUPS
+              value: 50
+
+            volumeMounts:
+            - name: backup-config
+              mountPath: /root/Backup/models
+
+            - name: backup-data
+              mountPath: /backups/
+
+            command:
+            - "/bin/sh"
+            - "-c"
+            - |
+              backup perform --trigger backup
