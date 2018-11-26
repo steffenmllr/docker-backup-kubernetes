@@ -7,6 +7,8 @@ RUN \
     libxslt-dev \
     postgresql \
     readline-dev \
+    openssl \
+    gnupg \
     gzip \
     tar \
     zlib-dev && \
