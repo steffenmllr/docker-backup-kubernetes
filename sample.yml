@@ -1,80 +1,117 @@
+---
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: backup-config
+  namespace: "my-namespace"
 data:
-  config.rb: |
-  Model.new(:backup, 'docker-backup-postgresql-to-local') do
+  backup.rb: |
+    # encoding: utf-8
+    Model.new(:backup, 'Backup databases to s3') do
 
-    ##
-    # PostgreSQL [Database]
-    #
-    database PostgreSQL do |db|
-      db.name               = :all
-      db.username           = ENV['DATABASE_USERNAME'].dup
-      db.password           = ENV['DATABASE_PASSWORD'].dup
-      db.host               = ENV['DATABASE_HOST'].dup
-      db.port               = ENV['DATABASE_PORT'].dup
-    end
+      ##
+      # Backup PostgreSQL
+      #
+      database PostgreSQL, :de do |db|
+        db.username           = ENV['POSTGRES_USER'].dup
+        db.password           = ENV['POSTGRES_PASSWORD'].dup
+        db.host               = "postgres-service"
+      end
 
-    ##
-    # Local Store
-    #
-    store_with Local do |local|
-      local.path = '/backups/'
-      # Use a number or a Time object to specify how many backups to keep.
-      local.keep = ENV['KEEP_BACKUPS'].dup
+      store_with S3 do |s3|
+        # AWS Credentials
+        s3.access_key_id     = ENV['ERC_AWS_ACCESS_KEY_ID'].dup
+        s3.secret_access_key = ENV['ERC_AWS_SECRET_ACCESS_KEY'].dup
+        s3.region             = 'eu-central-1'
+        s3.bucket             = 'my-backup'
+        s3.path               = '/s3-path'
+      end
+
+      encrypt_with OpenSSL do |encryption|
+        encryption.password = ENV['DATABASE_ENCR_PASSWORD'].dup
+        encryption.base64   = true
+        encryption.salt     = true
+      end
+
+      compress_with Gzip
+
+      ##
+      # Notify
+      #
+      notify_by Slack do |slack|
+        slack.on_success           = true
+        slack.on_warning           = true
+        slack.on_failure           = true
+
+        slack.webhook_url = 'URL
+      end
+
     end
 
 ---
-
 apiVersion: batch/v1beta1
 kind: CronJob
 metadata:
   name: database-backup
+  namespace: "my-namespace"
 spec:
-  schedule: "* */6 * * *" # every 6 hours
-  successfulJobsHistoryLimit: 2
+  schedule: "0 2 * * *"
+  successfulJobsHistoryLimit: 1
   failedJobsHistoryLimit: 1
   jobTemplate:
     spec:
       backoffLimit: 4
       template:
         spec:
-        volumes:
-          - name: backup-data
-            persistentVolumeClaim:
-              claimName: your-pv-claim
-          - name: backup-config
-            configMap:
-              name: backup-config
           terminationGracePeriodSeconds: 0
           restartPolicy: Never
-          containers:
-          - name: kubectl
-            image: steffenmllr/docker-backup-kubernetes:latest
-            env:
-            - name: DATABASE_USERNAME
-              value: "your-db"
-
-            - name: DATABASE_PASSWORD
-              value: "your-password"
-
-            - name: DATABASE_HOST
-              value: "your-host"
-
-            - name: KEEP_BACKUPS
-              value: 50
-
-            volumeMounts:
+          volumes:
             - name: backup-config
-              mountPath: /root/Backup/models
+              configMap:
+                name: backup-config
 
-            - name: backup-data
-              mountPath: /backups/
+          containers:
+            - name: backup
+              image: steffenmllr/docker-backup-kubernetes:v4.4.1
+              imagePullPolicy: Always
+              volumeMounts:
+                - name: backup-config
+                  mountPath: /tmp/models
+              env:
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: app-secrets
+                      key: POSTGRES_PASSWORD
 
-            command:
-            - "/bin/sh"
-            - "-c"
-            - |
-              backup perform --trigger backup
+                - name: POSTGRES_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: app-secrets
+                      key: POSTGRES_USER
+
+                - name: DATABASE_ENCR_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: app-secrets
+                      key: DATABASE_ENCR_PASSWORD
+
+                - name: ERC_AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: app-secrets
+                      key: ERC_AWS_ACCESS_KEY_ID
+
+                - name: ERC_AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: app-secrets
+                      key: ERC_AWS_SECRET_ACCESS_KEY
+
+              command:
+                - "/bin/sh"
+                - "-c"
+                - |
+                  backup generate:model --trigger backup --databases="postgresql"
+                  cp /tmp/models/backup.rb /root/Backup/models/backup.rb
+                  backup perform --trigger backup
