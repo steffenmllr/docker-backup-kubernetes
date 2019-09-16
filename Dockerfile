@@ -1,7 +1,7 @@
-FROM ruby:2.3-alpine
+FROM ruby:2-alpine
 
 RUN \
-  apk --update add \
+  apk add --no-cache \
     build-base \
     libxml2-dev \
     libxslt-dev \
@@ -14,4 +14,4 @@ RUN \
     zlib-dev && \
   rm -rf /var/cache/apk/*
 
-RUN gem install backup -v 4.4.1 --no-ri --no-rdoc
+RUN gem install backup -v 5.0.0.beta.2
