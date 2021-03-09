@@ -6,6 +6,7 @@ RUN \
     libxml2-dev \
     libxslt-dev \
     postgresql \
+    curl-dev \
     readline-dev \
     openssl \
     gnupg \
@@ -14,4 +15,4 @@ RUN \
     zlib-dev && \
   rm -rf /var/cache/apk/*
 
-RUN gem install backup -v 5.0.0.beta.2
+RUN gem install backup -v 5.0.0.beta.3
