@@ -5,57 +5,61 @@ metadata:
   name: backup-config
   namespace: "my-namespace"
 data:
+
   backup.rb: |
-    # encoding: utf-8
-    Model.new(:backup, 'Backup databases to s3') do
-
+    Model.new(:backup, 'my-backup') do
       ##
-      # Backup PostgreSQL
+      # PostgreSQL [Database]
       #
-      database PostgreSQL, :de do |db|
-        db.username           = ENV['POSTGRES_USER'].dup
-        db.password           = ENV['POSTGRES_PASSWORD'].dup
-        db.host               = "postgres-service"
+      database PostgreSQL do |db|
+        db.name               = ENV['DATABASE_NAME']
+        db.username           = ENV['DATABASE_USER']
+        db.password           = ENV['DATABASE_PASSWORD']
+        db.host               = ENV['DATABASE_SERVER']
+        db.port               = ENV['DATABASE_PORT']
       end
-
+      ##
+      # Amazon Simple Storage Service [Storage]
+      #
       store_with S3 do |s3|
-        # AWS Credentials
-        s3.access_key_id     = ENV['ERC_AWS_ACCESS_KEY_ID'].dup
-        s3.secret_access_key = ENV['ERC_AWS_SECRET_ACCESS_KEY'].dup
-        s3.region             = 'eu-central-1'
-        s3.bucket             = 'my-backup'
-        s3.path               = '/s3-path'
+        s3.access_key_id     = ENV['AWS_ACCESS_KEY_ID']
+        s3.secret_access_key = ENV['AWS_SECRET_ACCESS_KEY']
+        s3.region            = ENV['AWS_REGION']
+        s3.bucket            = ENV['AWS_BUCKET']
+        s3.path              = "databases"
+        s3.keep              = 120
       end
-
-      encrypt_with OpenSSL do |encryption|
-        encryption.password = ENV['DATABASE_ENCR_PASSWORD'].dup
-        encryption.base64   = true
-        encryption.salt     = true
-      end
-
-      compress_with Gzip
-
-      ##
-      # Notify
-      #
-      notify_by Slack do |slack|
-        slack.on_success           = true
-        slack.on_warning           = true
-        slack.on_failure           = true
-
-        slack.webhook_url = 'URL
-      end
-
     end
 
+
 ---
+
+apiVersion: v1
+kind: Secret
+type: Opaque
+metadata:
+  name: backup-secrets
+  namespace: "my-namespace"
+stringData:
+  DATABASE_NAME: "DATABASE_NAME"
+  DATABASE_USER: "DATABASE_USER"
+  DATABASE_PASSWORD: "DATABASE_PASSWORD"
+  DATABASE_SERVER: "DATABASE_SERVER"
+  DATABASE_PORT: "DATABASE_PORT"
+  AWS_ACCESS_KEY_ID: "AWS_ACCESS_KEY_ID"
+  AWS_SECRET_ACCESS_KEY: "AWS_SECRET_ACCESS_KEY"
+  AWS_REGION: "AWS_REGION"
+  AWS_BUCKET: "AWS_BUCKET"
+
+---
+
 apiVersion: batch/v1beta1
 kind: CronJob
 metadata:
   name: database-backup
   namespace: "my-namespace"
 spec:
-  schedule: "0 2 * * *"
+  schedule: "0 0 * * *" # https://crontab.guru/every-midnight
   successfulJobsHistoryLimit: 1
   failedJobsHistoryLimit: 1
   jobTemplate:
@@ -69,44 +73,16 @@ spec:
             - name: backup-config
               configMap:
                 name: backup-config
-
           containers:
             - name: backup
-              image: steffenmllr/docker-backup-kubernetes:v4.4.1
+              image: steffenmllr/docker-backup-kubernetes:5.0.0.beta.3
               imagePullPolicy: Always
               volumeMounts:
                 - name: backup-config
                   mountPath: /tmp/models
-              env:
-                - name: POSTGRES_PASSWORD
-                  valueFrom:
-                    secretKeyRef:
-                      name: app-secrets
-                      key: POSTGRES_PASSWORD
-
-                - name: POSTGRES_USER
-                  valueFrom:
-                    secretKeyRef:
-                      name: app-secrets
-                      key: POSTGRES_USER
-
-                - name: DATABASE_ENCR_PASSWORD
-                  valueFrom:
-                    secretKeyRef:
-                      name: app-secrets
-                      key: DATABASE_ENCR_PASSWORD
-
-                - name: ERC_AWS_ACCESS_KEY_ID
-                  valueFrom:
-                    secretKeyRef:
-                      name: app-secrets
-                      key: ERC_AWS_ACCESS_KEY_ID
-
-                - name: ERC_AWS_SECRET_ACCESS_KEY
-                  valueFrom:
-                    secretKeyRef:
-                      name: app-secrets
-                      key: ERC_AWS_SECRET_ACCESS_KEY
+              envFrom:
+                - secretRef:
+                    name: backup-secrets
 
               command:
                 - "/bin/sh"
@@ -115,3 +91,4 @@ spec:
                   backup generate:model --trigger backup --databases="postgresql"
                   cp /tmp/models/backup.rb /root/Backup/models/backup.rb
                   backup perform --trigger backup
+```
