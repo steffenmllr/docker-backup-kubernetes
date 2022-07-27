@@ -1,3 +1,5 @@
+ARG BACKUP_VERSION=5.0.0.beta.3
+
 FROM ruby:2-alpine
 
 RUN \
@@ -15,4 +17,4 @@ RUN \
     zlib-dev && \
   rm -rf /var/cache/apk/*
 
-RUN gem install backup -v 5.0.0.beta.3
+RUN gem install backup -v $BACKUP_VERSION
